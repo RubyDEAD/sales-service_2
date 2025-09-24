@@ -52,7 +52,7 @@ CREATE USER salesuser WITH PASSWORD 'yourpassword';
 GRANT ALL PRIVILEGES ON DATABASE salesdb TO salesuser;
 ```
 
-- Update your .env file with DB credentials:
+- Update your `.env` file with DB credentials:
 
 ```env
 DB_USER=salesuser
@@ -73,5 +73,5 @@ Open your browser at http://localhost:3000/login.html
 ---
 
 ## Future Integration
-- This service will integrate with the Inventory Service
-- Planned integration: syncing poduct stock levels and sales updates
+- This service will integrate with the **Inventory Service**
+- Planned integration: syncing product stock levels and sales updates
