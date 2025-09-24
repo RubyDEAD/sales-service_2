@@ -68,7 +68,7 @@ DB_NAME=salesdb
 npm start
 ```
 
-Open your browser at http://localhost:3000
+Open your browser at http://localhost:3000/login.html
 
 ---
 
