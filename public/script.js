@@ -2,15 +2,32 @@ async function loadProducts() {
   const res = await fetch("/products");
   if (res.status === 401) { window.location.href = "login.html"; return; }
   const products = await res.json();
+
   const list = document.getElementById("productList");
   list.innerHTML = "";
+
   products.forEach(p => {
     const li = document.createElement("li");
-    li.innerHTML = `${p.name} - ₱${p.price} <button onclick="addToCart(${p.id})">Add</button>`;
+    li.innerHTML = `
+      <div style="text-align:left;">
+        <img src="${p.image}" 
+             alt="${p.name}" 
+             style="width:80px;height:80px;border-radius:8px;margin-right:10px;vertical-align:middle;">
+        <div style="display:inline-block;vertical-align:middle;">
+          <strong>${p.name}</strong><br>
+          ₱${p.price}<br>
+          <small>Available: ${p.quantity}</small>
+        </div>
+      </div>
+      <button onclick="addToCart(${p.id})">Add</button>
+    `;
     list.appendChild(li);
   });
+
   loadCart();
 }
+
+
 
 async function addToCart(id) {
   await fetch("/cart/add", {

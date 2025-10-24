@@ -1,6 +1,6 @@
 import express from "express";
 import session from "express-session";
-import fetch from "node-fetch"; // Make sure to install this: npm i node-fetch
+import fetch from "node-fetch";
 
 const app = express();
 app.use(express.json());
@@ -16,10 +16,8 @@ app.use(
 
 app.use(express.static("public"));
 
-// URL of your Inventory API (adjust if running on a different port)
 const INVENTORY_API = "http://localhost:5145/api/inventory";
 
-// --- Auth ---
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
   if (username === "user" && password === "pass123") {
@@ -33,8 +31,6 @@ app.post("/logout", (req, res) => {
   req.session.destroy(() => res.json({ success: true }));
 });
 
-// --- Products ---
-// Instead of querying local DB, fetch from Inventory Service
 app.get("/products", async (req, res) => {
   if (!req.session.user)
     return res.status(401).json({ error: "Unauthorized" });
@@ -43,7 +39,22 @@ app.get("/products", async (req, res) => {
     const inventoryRes = await fetch(`${INVENTORY_API}`);
     if (!inventoryRes.ok) throw new Error("Failed to fetch inventory data");
 
-    const products = await inventoryRes.json();
+    let products = await inventoryRes.json();
+
+    products = products.map((p) => {
+      let image = "/images/default.jpg";
+
+      if (p.name.toLowerCase().includes("pen")) image = "/images/pen.jpg";
+      else if (p.name.toLowerCase().includes("notebook")) image = "/images/notebook.jpg";
+      else if (p.name.toLowerCase().includes("paper")) image = "/images/paper.jpg";
+
+      return {
+        ...p,
+        quantity: 25,
+        image,
+      };
+    });
+
     res.json(products);
   } catch (err) {
     console.error("Error fetching products:", err.message);
@@ -51,7 +62,6 @@ app.get("/products", async (req, res) => {
   }
 });
 
-// --- Cart ---
 app.post("/cart/add", (req, res) => {
   if (!req.session.user)
     return res.status(401).json({ error: "Unauthorized" });
@@ -92,7 +102,6 @@ app.get("/cart", async (req, res) => {
   }
 });
 
-// --- Checkout ---
 app.post("/checkout", async (req, res) => {
   if (!req.session.user)
     return res.status(401).json({ error: "Unauthorized" });
@@ -117,7 +126,6 @@ app.post("/checkout", async (req, res) => {
   }
 });
 
-// --- Run server ---
 app.listen(3001, () =>
   console.log("Sales Service running on http://localhost:3001")
 );
