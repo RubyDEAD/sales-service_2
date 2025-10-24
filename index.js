@@ -1,6 +1,6 @@
 import express from "express";
 import session from "express-session";
-import pool from "./db.js";
+import fetch from "node-fetch"; // Make sure to install this: npm i node-fetch
 
 const app = express();
 app.use(express.json());
@@ -16,25 +16,8 @@ app.use(
 
 app.use(express.static("public"));
 
-// Initialize products table
-async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS products (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      price NUMERIC NOT NULL
-    );
-  `);
-
-  const res = await pool.query("SELECT COUNT(*) FROM products");
-  if (res.rows[0].count === "0") {
-    await pool.query(
-      "INSERT INTO products (name, price) VALUES ($1,$2),($3,$4),($5,$6)",
-      ["Pen", 5, "Notebook", 20, "Paper", 1]
-    );
-  }
-}
-initDB();
+// URL of your Inventory API (adjust if running on a different port)
+const INVENTORY_API = "http://localhost:5145/api/inventory";
 
 // --- Auth ---
 app.post("/login", (req, res) => {
@@ -51,15 +34,27 @@ app.post("/logout", (req, res) => {
 });
 
 // --- Products ---
+// Instead of querying local DB, fetch from Inventory Service
 app.get("/products", async (req, res) => {
-  if (!req.session.user) return res.status(401).json({ error: "Unauthorized" });
-  const result = await pool.query("SELECT * FROM products");
-  res.json(result.rows);
+  if (!req.session.user)
+    return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const inventoryRes = await fetch(`${INVENTORY_API}`);
+    if (!inventoryRes.ok) throw new Error("Failed to fetch inventory data");
+
+    const products = await inventoryRes.json();
+    res.json(products);
+  } catch (err) {
+    console.error("Error fetching products:", err.message);
+    res.status(500).json({ error: "Failed to load products." });
+  }
 });
 
 // --- Cart ---
 app.post("/cart/add", (req, res) => {
-  if (!req.session.user) return res.status(401).json({ error: "Unauthorized" });
+  if (!req.session.user)
+    return res.status(401).json({ error: "Unauthorized" });
 
   const { id, qty } = req.body;
   if (!req.session.cart) req.session.cart = [];
@@ -68,38 +63,61 @@ app.post("/cart/add", (req, res) => {
 });
 
 app.get("/cart", async (req, res) => {
-  if (!req.session.user) return res.status(401).json({ error: "Unauthorized" });
+  if (!req.session.user)
+    return res.status(401).json({ error: "Unauthorized" });
 
   const cart = req.session.cart || [];
   if (cart.length === 0) return res.json([]);
 
-  const ids = cart.map(c => c.id);
-  const result = await pool.query(
-    `SELECT * FROM products WHERE id = ANY($1)`,
-    [ids]
-  );
+  try {
+    // Fetch full product list from Inventory Service
+    const inventoryRes = await fetch(`${INVENTORY_API}`);
+    const products = await inventoryRes.json();
 
-  const detailedCart = cart.map(c => {
-    const product = result.rows.find(p => p.id === c.id);
-    return {
-      id: c.id,
-      name: product.name,
-      price: Number(product.price),
-      qty: c.qty,
-      total: Number(product.price) * c.qty
-    };
-  });
+    const detailedCart = cart.map((c) => {
+      const product = products.find((p) => p.id === c.id);
+      return {
+        id: c.id,
+        name: product?.name || "Unknown",
+        price: Number(product?.price || 0),
+        qty: c.qty,
+        total: Number(product?.price || 0) * c.qty,
+      };
+    });
 
-  res.json(detailedCart);
+    res.json(detailedCart);
+  } catch (err) {
+    console.error("Error loading cart:", err.message);
+    res.status(500).json({ error: "Failed to load cart." });
+  }
 });
 
-app.post("/checkout", (req, res) => {
-  if (!req.session.user) return res.status(401).json({ error: "Unauthorized" });
-  req.session.cart = [];
-  res.json({ success: true, message: "Checkout successful!" });
+// --- Checkout ---
+app.post("/checkout", async (req, res) => {
+  if (!req.session.user)
+    return res.status(401).json({ error: "Unauthorized" });
+
+  const cart = req.session.cart || [];
+  if (cart.length === 0)
+    return res.json({ success: false, message: "Cart is empty." });
+
+  try {
+    // For each product, tell the Inventory API to reduce stock
+    for (const item of cart) {
+      await fetch(`${INVENTORY_API}/${item.id}/adjust-qty?delta=${-item.qty}`, {
+        method: "PATCH",
+      });
+    }
+
+    req.session.cart = [];
+    res.json({ success: true, message: "Checkout successful! Inventory updated." });
+  } catch (err) {
+    console.error("Checkout error:", err.message);
+    res.status(500).json({ error: "Checkout failed. Try again later." });
+  }
 });
 
-// Run server
-app.listen(3000, () =>
-  console.log("Sales Service running on http://localhost:3000")
+// --- Run server ---
+app.listen(3001, () =>
+  console.log("Sales Service running on http://localhost:3001")
 );
