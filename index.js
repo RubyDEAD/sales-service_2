@@ -16,8 +16,10 @@ app.use(
 
 app.use(express.static("public"));
 
+// ✅ Fixed: no double "/api/inventory"
 const INVENTORY_API = "http://localhost:5145/api/inventory";
 
+// --- AUTH ---
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
   if (username === "user" && password === "pass123") {
@@ -31,36 +33,36 @@ app.post("/logout", (req, res) => {
   req.session.destroy(() => res.json({ success: true }));
 });
 
+// --- PRODUCTS ---
 app.get("/products", async (req, res) => {
   if (!req.session.user)
     return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const inventoryRes = await fetch(`${INVENTORY_API}`);
-    if (!inventoryRes.ok) throw new Error("Failed to fetch inventory data");
+    // ✅ Fetch directly from your working ASP.NET API
+    const inventoryRes = await fetch(INVENTORY_API);
+    if (!inventoryRes.ok)
+      throw new Error(`Inventory API returned ${inventoryRes.status}`);
 
-    let products = await inventoryRes.json();
+    const inventoryProducts = await inventoryRes.json();
 
-    products = products.map((p) => {
-      let image = "/images/default.jpg";
-
-      if (p.name.toLowerCase().includes("pen")) image = "/images/pen.jpg";
-      else if (p.name.toLowerCase().includes("notebook")) image = "/images/notebook.jpg";
-      else if (p.name.toLowerCase().includes("paper")) image = "/images/paper.jpg";
-
-      return {
-        ...p,
-        quantity: 25,
-        image,
-      };
-    });
+    // ✅ Use actual quantity and image (from C# inventory)
+    const products = inventoryProducts.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: Number(p.price),
+      quantity: p.quantity || p.qty || 0, // depending on your property name
+      image: p.image || p.uri || "/images/default.jpg",
+      status: p.status || "available",
+    }));
 
     res.json(products);
   } catch (err) {
-    console.error("Error fetching products:", err.message);
-    res.status(500).json({ error: "Failed to load products." });
+    console.error("Error fetching products from Inventory:", err.message);
+    res.status(500).json({ error: "Failed to load products from inventory." });
   }
 });
+
 
 app.post("/cart/add", (req, res) => {
   if (!req.session.user)
@@ -80,8 +82,7 @@ app.get("/cart", async (req, res) => {
   if (cart.length === 0) return res.json([]);
 
   try {
-    // Fetch full product list from Inventory Service
-    const inventoryRes = await fetch(`${INVENTORY_API}`);
+    const inventoryRes = await fetch(INVENTORY_API);
     const products = await inventoryRes.json();
 
     const detailedCart = cart.map((c) => {
@@ -102,6 +103,7 @@ app.get("/cart", async (req, res) => {
   }
 });
 
+
 app.post("/checkout", async (req, res) => {
   if (!req.session.user)
     return res.status(401).json({ error: "Unauthorized" });
@@ -111,7 +113,6 @@ app.post("/checkout", async (req, res) => {
     return res.json({ success: false, message: "Cart is empty." });
 
   try {
-    // For each product, tell the Inventory API to reduce stock
     for (const item of cart) {
       await fetch(`${INVENTORY_API}/${item.id}/adjust-qty?delta=${-item.qty}`, {
         method: "PATCH",
